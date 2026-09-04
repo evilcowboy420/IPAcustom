@@ -13,10 +13,13 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Build .app with no signing
         run: |
-          xcodebuild -workspace Moonlight.xcworkspace \
+          ls -la
+          xcodebuild -project Moonlight.xcodeproj \
             -scheme Moonlight \
             -configuration Release \
             -sdk iphoneos \
