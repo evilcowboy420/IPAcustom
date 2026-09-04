@@ -1,4 +1,4 @@
-name: Build signed IPA
+name: Build unsigned IPA for ESign
 on: push
 
 jobs:
@@ -7,41 +7,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cert
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      - name: Build .app (no signing)
         run: |
-          CERT_PATH=$RUNNER_TEMP/cert.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERT_PATH
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERT_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          xcodebuild -workspace Moonlight.xcworkspace \
+            -scheme Moonlight \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath $RUNNER_TEMP/derived \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
 
-      - name: Install profile
-        env:
-          PROVISION_PROFILE_BASE64: ${{ secrets.PROVISION_PROFILE_BASE64 }}
+      - name: Make IPA
         run: |
-          PROFILE_PATH=$RUNNER_TEMP/profile.mobileprovision
-          echo -n "$PROVISION_PROFILE_BASE64" | base64 --decode -o $PROFILE_PATH
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
-
-      - name: Build archive
-        run: |
-          xcodebuild -workspace Moonlight.xcworkspace -scheme Moonlight -configuration Release -archivePath $RUNNER_TEMP/Moonlight.xcarchive archive -allowProvisioningUpdates
-
-      - name: Export IPA
-        run: |
-          xcodebuild -exportArchive -archivePath $RUNNER_TEMP/Moonlight.xcarchive -exportPath $RUNNER_TEMP/build -exportOptionsPlist ExportOptions.plist
+          APP_PATH=$(find $RUNNER_TEMP/derived/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
+          echo "Found app: $APP_PATH"
+          mkdir -p $RUNNER_TEMP/Payload
+          cp -r "$APP_PATH" $RUNNER_TEMP/Payload/
+          cd $RUNNER_TEMP
+          zip -r Moonlight-unsigned.ipa Payload
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Moonlight-signed-ipa
-          path: ${{ runner.temp }}/build/*.ipa
+          name: Moonlight-unsigned-ipa
+          path: ${{ runner.temp }}/Moonlight-unsigned.ipa
